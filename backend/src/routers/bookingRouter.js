@@ -1,17 +1,17 @@
 const express = require("express");
 const { Bookingmodel } = require("../models/bookingModel");
-const { Usermodel } =require("../models/userModel");
+const { Doctormodel } =require("../models/doctorModel");
 const bookingRouter = express.Router();
 
 
 //1.Book/Schedule Appointment 
-bookingRouter.post("/create" , async (req, res) => {
+bookingRouter.post("/new" , async (req, res) => {
     const bookingData = req.body;
     try {
         let allBookings = await Bookingmodel.find({ doctorId: bookingData.doctorId })
         console.log(allBookings)
         if (allBookings.length === 0) {
-            const addData = new Bookingmodel(bookingData);
+            let addData = new Bookingmodel(bookingData);
             await addData.save();
             res.json({" msg": "New Appointment created", "Data": bookingData })
         } else {
@@ -21,7 +21,7 @@ bookingRouter.post("/create" , async (req, res) => {
                         return;
                 }
             }
-            const addData = new Bookingmodel(bookingData);
+            let addData = new Bookingmodel(bookingData);
             await addData.save();
             res.json({" msg": "New Appointment created", "Data": bookingData })
 
@@ -35,34 +35,44 @@ bookingRouter.post("/create" , async (req, res) => {
 
 //2.Reschedule Appointment 
 bookingRouter.patch('/reschedule/:id', async (req, res) => {
-    const updates = Object.keys(req.body)
-    const allowedUpdates = ['bookingDate', 'bookingSlot', 'doctorId']
-    const isValidOperation = updates.every((update) => allowedUpdates.includes(update))
-    if (!isValidOperation) {
-        return res.status(400).send({ error: 'Invalid updates!' })
+    let  ID = req.params.id
+    let {bookingDate,bookingSlot}=req.body
+    //check for date
+    let specificDate = new Date(`${bookingDate}`);
+    let currentDate = new Date();
+    if(currentDate>specificDate){
+         res.json({"msg":"Consulatation already done"})
+         return;
     }
-    
+    //console.log(bookingDate)
     try {
         //check doctor availablity
-        const ID = req.params.id
-        console.log(req.params.id)
         let bookingData = await Bookingmodel.find({_id:ID})
-        console.log(bookingData)
         let doctorId=bookingData[0].doctorId
         let allBookings = await Bookingmodel.find({ doctorId: doctorId })
         //console.log(allBookings)
         for (let i = 0; i < allBookings.length; i++) {
-                if (allBookings[i].bookingDate === bookingData[0].bookingDate&&allBookings[i].bookingSlot === bookingData[0].bookingSlot){
+                if (allBookings[i].bookingDate === bookingDate&&allBookings[i].bookingSlot === bookingSlot){
                     //console.log(doctorId)
-                    let doctor=await Usermodel.find({ _id: doctorId })
+                    let doctor=await Doctormodel.find({ _id: doctorId })
                     let expertise=doctor[0].expertise
                     console.log(expertise)
-                    let allDoctor=await Usermodel.find({expertise})
-                    res.json({ "msg": `This Slot is Not Available.Other ${expertise} available`, "data" : allDoctor})
+                    let allDoctor=await Doctormodel.find({expertise})
+                    res.json({ "msg": `This Slot is Not Available.Please check other slot.Other ${expertise} available`, "data" : allDoctor})
                     return;
                 }}
-        const rescheduleBooking = await Bookingmodel.findByIdAndUpdate(ID, req.body, { new: true, runValidators: true })
-        res.json({"msg":"Appointment Rescheduled ","data":rescheduleBooking})
+        //Check for reschedule count
+        let rescheduleCount=bookingData[0].rescheduleCount
+        if(rescheduleCount>=2){
+            res.json({ "msg": `As per our policy maximum two Reschedule allowed`, "data" : bookingData})
+            return;
+        }
+
+        await Bookingmodel.findByIdAndUpdate(ID, {bookingDate,bookingSlot})
+        await Bookingmodel.findByIdAndUpdate(ID, {rescheduleCount:rescheduleCount+1,status:"rescheduled"})
+        let rescheduleBookingData=await Bookingmodel.find({_id:ID},{})
+
+        res.json({"msg":"Appointment Rescheduled ","data":rescheduleBookingData})
     } catch (error) {
         console.log("error from getting all booking route",error);
         res.json({"msg":"error while appointment reschedule"})
@@ -70,36 +80,74 @@ bookingRouter.patch('/reschedule/:id', async (req, res) => {
 })
 
 //3.CancelAppointment
-bookingRouter.delete("/cancel/:id",async (req, res) => {
-    const ID = req.params.id
-    //console.log(ID);
+// bookingRouter.delete("/cancel/:id",async (req, res) => {
+//     const ID = req.params.id
+//     //console.log(ID);
+//     try {
+//         let reqData=await Bookingmodel.find({_id:ID});
+//         let specificDate = new Date(`${reqData[0].bookingDate}`);
+//         let currentDate = new Date();
+//         if(currentDate>specificDate){
+//             return res.json({"msg":"Consulatation already done"})
+//         }else{
+//             let timeDiff = Math.abs(currentDate.getTime() - specificDate.getTime());
+//             let daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+//             if(daysDiff>=1){
+//                 await Bookingmodel.findByIdAndDelete({ _id: ID });
+//                 res.json({ "msg": `Booking for ID  ${ID} cancelled succesfully` })
+//             }else{
+//                 return res.json({"msg":"Our cancellation policy requires a minimum one-day notice for booking deletions."})
+//             }
+            
+//         }
+        
+//     } catch (error) {
+//         console.log("error from deleting booking data", error.message);
+//         res.json({ "msg": "error in deleting of booking data", "errorMsg": error.message })
+//     }
+// })
+
+//3.Cancel Appointment
+bookingRouter.patch('/cancel/:id', async (req, res) => {
+    let  ID = req.params.id
+    
+   
     try {
-        let reqData=await Bookingmodel.find({_id:ID});
-        let specificDate = new Date(`${reqData[0].bookingDate}`);
+      
+        let bookingData = await Bookingmodel.find({_id:ID})
+        if(bookingData[0].status==="cancelled"){
+            res.json({"msg":"Appointment alredy cancelled"})
+             return;
+        }
+        //check for todays date
+        let specificDate = new Date(`${bookingData[0].bookingDate}`);
         let currentDate = new Date();
         if(currentDate>specificDate){
-            return res.json({"msg":"Consulatation already done"})
-        }else{
+             res.json({"msg":"Consulatation already done"})
+             return;
+        }else
+        {
             let timeDiff = Math.abs(currentDate.getTime() - specificDate.getTime());
+            console.log(timeDiff)
             let daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
-            if(daysDiff>=1){
-                await Bookingmodel.findByIdAndDelete({ _id: ID });
-                res.json({ "msg": `Booking for ID  ${ID} cancelled succesfully` })
-            }else{
-                return res.json({"msg":"Our cancellation policy requires a minimum one-day notice for booking deletions."})
+            console.log(daysDiff)
+            if(daysDiff>1){
+            await Bookingmodel.findByIdAndUpdate(ID, {status:"cancelled"})
+            res.json({ "msg": `Booking for ID  ${ID} cancelled succesfully` })
             }
-            
-        }
-        
+            else{
+                return res.json({"msg":"Our cancellation policy requires a minimum one-day notice for booking cancellation."})
+            }
+        }               
+       
     } catch (error) {
-        console.log("error from deleting booking data", error.message);
-        res.json({ "msg": "error in deleting of booking data", "errorMsg": error.message })
+        console.log("error from getting data from booking route",error);
+        res.json({"msg":"error while appointment cancellation"})
     }
 })
 
-
 //4.GetAll Appointments by Doctor Id And Date
-bookingRouter.get("/all-doctorId",async (req, res) => {
+bookingRouter.get("/all/doctorId",async (req, res) => {
     let doctorId = req.body.doctorId;
     let bookingDate = req.body.bookingDate;
     
@@ -114,7 +162,7 @@ bookingRouter.get("/all-doctorId",async (req, res) => {
 })
 
 //4. GetAll Appointments by Specialization And Date
-bookingRouter.get("/all-specialization",async (req, res) => {
+bookingRouter.get("/all/specialization",async (req, res) => {
     let expertise = req.body.expertise;
     let bookingDate = req.body.bookingDate;
     

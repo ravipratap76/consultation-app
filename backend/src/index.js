@@ -1,8 +1,9 @@
 const express=require("express");
 require('./db/mongoose')
-const { userRouter } = require("./routers/userRouter");
+const { doctorRouter } = require("./routers/doctorRouter");
 const { bookingRouter } = require("./routers/bookingRouter");
 const { rateRouter } = require("./routers/rateRouter");
+const { earningRouter } = require("./routers/earningRouter");
 
 const app=express();
 const port = process.env.PORT || 3000
@@ -12,9 +13,10 @@ app.get("/",(req,res)=>{
     res.send("Welcome to Home Route")
 }) 
 
-app.use("/user",userRouter)
-app.use("/booking",bookingRouter)
+app.use("/doctor",doctorRouter)
+app.use("/appointment",bookingRouter)
 app.use("/expertise-rate",rateRouter)
+app.use("/earning",earningRouter)
 
 
 app.listen(port, () => {
