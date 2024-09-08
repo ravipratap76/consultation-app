@@ -176,7 +176,7 @@ bookingRouter.get("/all/specialization",async (req, res) => {
     }
 })
 
-//5.getting paticular user booking data
+//5.getting paticular user booking data--
 bookingRouter.get("/paticularUser",async (req, res) => {
     let userId = req.body.userId;
     
